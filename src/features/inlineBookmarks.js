@@ -578,18 +578,41 @@ class InlineBookmarkTreeDataProvider {
     }
 
     _filterTreeView(elements) {
-
-        if(this.gitIgnoreHandler && this.gitIgnoreHandler.filter){
-            elements = elements.filter(e => this.gitIgnoreHandler.filter(e.resource));
+        if (this.gitIgnoreHandler && this.gitIgnoreHandler.filter) {
+            elements = elements.filter((e) => this.gitIgnoreHandler.filter(e.resource));
         }
 
         if (this.filterTreeViewWords && this.filterTreeViewWords.length) {
-            elements = elements.filter(e => this.filterTreeViewWords.some(rx => new RegExp(rx, 'g').test(e.label)));
+            elements = elements.filter((e) => this._recursiveWordsFilter(e));
         }
 
         return elements;
     }
-    /** other methods */
+
+    _recursiveWordsFilter(element) {
+        // For leaf nodes (with a label), apply the filter directly
+        if (element.label) {
+            return this.filterTreeViewWords.some((rx) => new RegExp(rx, "g").test(element.label));
+        }
+
+        // For branch nodes, recursively check children
+        const children = this.model.getChildren(element);
+        if (!children || children.length === 0) {
+            return false; // No children, filter out this branch
+        }
+
+        // Recursively filter children
+        // Keep the branch if any child (or nested child) passes the filter
+        const passedChildren = children.filter((child) => this._recursiveWordsFilter(child));
+        return passedChildren.length > 0; // Keep the branch if it has any passing children
+
+        // Note on the recursive behavior:
+        // 1. Leaf nodes are filtered based on their labels.
+        // 2. Branch nodes are kept if any of their descendants match the filter.
+        // 3. This creates a cascading effect where a match at any level
+        //    preserves the entire path from the root to that match.
+        // 4. The root node is only filtered out if there are no matches in the entire tree.        
+    }
 
     setTreeViewFilterWords(words) {
         this.filterTreeViewWords = words;
