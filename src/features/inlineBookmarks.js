@@ -656,47 +656,69 @@ class InlineBookmarkTreeDataProvider {
     }
 
     _recursiveWordsFilter(element) {
-        // For leaf nodes (with a label), apply the filter directly
-        var oldMethod = false;
-        if (oldMethod) {
-            // TODO: Make this an option
-            if (element.label) {
-                return this.filterTreeViewWords.some((rx) => new RegExp(rx, "g").test(element.label));
-            }
-        } else {
-            if (element.label) {
-                for (let rx of this.filterTreeViewWords) {
-                    const labelRegex = new RegExp(rx, "g");
-                    if (labelRegex.test(element.label)) {
-                        // If the label matches, perform two checks on the word:
-                        // 1. Exact string match
-                        // 2. RegExp match
-                        if (element.word && (element.word === rx || new RegExp(element.word).test(rx))) {
-                            return true;
-                        }
-                    }
+        // If the element is undefined or null, return false
+        if (!element) {
+            return false;
+        }
+
+        // Retrieve the list of filter words (regex patterns)
+        const filterWords = this.filterTreeViewWords;
+
+        // 1. Check for perfect match on WORD
+        if (element.word) {
+            for (let rx of filterWords) {
+                if (element.word === rx) {
+                    return true; // Perfect match on word
                 }
-                return false; // If no match is found after checking all regexes
             }
         }
 
-        // For branch nodes, recursively check children
+        // 2. Check for regex match on WORD
+        if (element.word) {
+            for (let rx of filterWords) {
+                try {
+                    const wordRegex = new RegExp(rx);
+                    if (wordRegex.test(element.word)) {
+                        return true; // Regex match on word
+                    }
+                } catch (e) {
+                    // Handle invalid regex pattern
+                    continue; // Skip to the next regex if invalid
+                }
+            }
+        }
+
+        // 3. Check for regex match on LABEL
+        if (element.label) {
+            for (let rx of filterWords) {
+                try {
+                    const labelRegex = new RegExp(rx);
+                    if (labelRegex.test(element.label)) {
+                        return true; // Regex match on label
+                    }
+                } catch (e) {
+                    // Handle invalid regex pattern
+                    continue; // Skip to the next regex if invalid
+                }
+            }
+        }
+
+        // 4. Handle branches: recursively check children
         const children = this.model.getChildren(element);
-        if (!children || children.length === 0) {
+        if (children && children.length > 0) {
+            // Recursively filter children
+            // Keep the branch if any child (or nested child) passes the filter
+            for (let child of children) {
+                if (this._recursiveWordsFilter(child)) {
+                    return true; // At least one child passes the filter
+                }
+            }
+        } else {
             return false; // No children, filter out this branch
         }
 
-        // Recursively filter children
-        // Keep the branch if any child (or nested child) passes the filter
-        const passedChildren = children.filter((child) => this._recursiveWordsFilter(child));
-        return passedChildren.length > 0; // Keep the branch if it has any passing children
-
-        // Note on the recursive behavior:
-        // 1. Leaf nodes are filtered based on their labels.
-        // 2. Branch nodes are kept if any of their descendants match the filter.
-        // 3. This creates a cascading effect where a match at any level
-        //    preserves the entire path from the root to that match.
-        // 4. The root node is only filtered out if there are no matches in the entire tree.
+        // 5. No matches found; return false
+        return false;
     }
 
     setTreeViewFilterWords(words) {
