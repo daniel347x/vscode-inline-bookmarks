@@ -40,12 +40,33 @@ class Commands {
                 this.controller.bookmarks[uri][cat].forEach((b) => {
                     entries.push({
                         label: b.text,
+                        word: b.word,
                         description: fname,
                         target: new vscode.Location(resource, b.range),
                     });
                 });
             });
         }, this);
+
+        // Sort entries first by word, then by label
+        entries.sort((a, b) => {
+            if (a.word < b.word) return -1;
+            if (a.word > b.word) return 1;
+            if (a.label < b.label) return -1;
+            if (a.label > b.label) return 1;
+            return 0;
+        });
+
+        var useNewMethod = false;
+
+        if (useNewMethod) {
+            // Create a new list with concatenated 'label' and no 'word' field
+            entries = entries.map((entry) => ({
+                label: `${entry.label}`,
+                description: entry.description,
+                target: entry.target,
+            }));
+        }
 
         vscode.window.showQuickPick(entries, { placeHolder: placeHolder || "Select bookmarks" }).then((item) => {
             vscode.commands.executeCommand("inlineBookmarks.jumpToRange", item.target.uri, item.target.range);
@@ -78,6 +99,7 @@ class Commands {
                 this.controller.bookmarks[uri][cat].forEach((b) => {
                     entries.push({
                         label: b.text,
+                        word: b.word,
                         description: fname,
                         target: new vscode.Location(resource, b.range),
                     });
@@ -88,6 +110,17 @@ class Commands {
         if (entries.length === 0) {
             vscode.window.showInformationMessage("No results");
             return;
+        }
+
+        var useNewMethod = false;
+
+        if (useNewMethod) {
+            // Create a new list with concatenated 'label' and no 'word' field
+            entries = entries.map((entry) => ({
+                label: `${entry.word}: ${entry.label}`,
+                description: entry.description,
+                target: entry.target,
+            }));
         }
 
         entries.forEach(function (v, i, a) {
@@ -261,6 +294,7 @@ class InlineBookmarksCtrl {
                 var decoration = {
                     range: new vscode.Range(startPos, endPos),
                     text: document.getText(new vscode.Range(startPos, fullLine.end)),
+                    word: word,
                 };
 
                 locations.push(decoration);
@@ -433,36 +467,16 @@ class InlineBookmarksDataModel {
         /** returns element */
         let fileBookmarks = Object.keys(this.controller.bookmarks);
 
-        // if (settings.extensionConfig().view.showVisibleFilesOnly) {
-        //     let visibleEditorUris;
-        //     if (settings.extensionConfig().view.showVisibleFilesOnlyMode === "onlyActiveEditor") {
-        //         // Original shows only the active editor
-        //         // visibleEditorUris = [vscode.window.activeTextEditor.document.uri.path];
-        //         // New shows all open editors
-        //         visibleEditorUris = vscode.workspace.textDocuments.map((doc) => doc.uri.path);
-        //     } else {
-        //         visibleEditorUris = vscode.window.visibleTextEditors.map((te) => te.document.uri.path);
-        //     }
+        if (settings.extensionConfig().view.showVisibleFilesOnly) {
+            let visibleEditorUris;
+            if (settings.extensionConfig().view.showVisibleFilesOnlyMode === "onlyActiveEditor") {
+                visibleEditorUris = [vscode.window.activeTextEditor.document.uri.path];
+            } else {
+                visibleEditorUris = vscode.window.visibleTextEditors.map((te) => te.document.uri.path);
+            }
 
-        //     fileBookmarks = fileBookmarks.filter((v) => visibleEditorUris.includes(vscode.Uri.parse(v).path));
-        // }
-
-        let visibleEditorUris = vscode.window.tabGroups.all
-            .map((group) => group.tabs)
-            .flat()
-            .map((tab) => {
-                if (tab.input instanceof vscode.TabInputText) {
-                    return tab.input.uri.path;
-                } else if (tab.input instanceof vscode.TabInputTextDiff) {
-                    // Include both original and modified files in case of diff editors
-                    return [tab.input.modified.path, tab.input.original.path];
-                }
-                return null;
-            })
-            .flat()
-            .filter((path) => path !== null);
-
-        fileBookmarks = fileBookmarks.filter((v) => visibleEditorUris.includes(vscode.Uri.parse(v).path));
+            fileBookmarks = fileBookmarks.filter((v) => visibleEditorUris.includes(vscode.Uri.parse(v).path));
+        }
 
         return fileBookmarks.sort().map((v) => {
             return {
@@ -490,6 +504,7 @@ class InlineBookmarksDataModel {
                                 location: location,
                                 label: v.text.trim(),
                                 name: v.text.trim(),
+                                word: v.word.trim(),
                                 type: NodeType.LOCATION,
                                 category: cat,
                                 parent: element,
@@ -622,8 +637,27 @@ class InlineBookmarkTreeDataProvider {
 
     _recursiveWordsFilter(element) {
         // For leaf nodes (with a label), apply the filter directly
-        if (element.label) {
-            return this.filterTreeViewWords.some((rx) => new RegExp(rx, "g").test(element.label));
+        var oldMethod = false;
+        if (oldMethod) {
+            // TODO: Make this an option
+            if (element.label) {
+                return this.filterTreeViewWords.some((rx) => new RegExp(rx, "g").test(element.label));
+            }
+        } else {
+            if (element.label) {
+                for (let rx of this.filterTreeViewWords) {
+                    const labelRegex = new RegExp(rx, "g");
+                    if (labelRegex.test(element.label)) {
+                        // If the label matches, perform two checks on the word:
+                        // 1. Exact string match
+                        // 2. RegExp match
+                        if (element.word && (element.word === rx || new RegExp(element.word).test(rx))) {
+                            return true;
+                        }
+                    }
+                }
+                return false; // If no match is found after checking all regexes
+            }
         }
 
         // For branch nodes, recursively check children
