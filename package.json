@@ -92,6 +92,15 @@
                 }
             },
             {
+                "command": "inlineBookmarks.jumpToRange",
+                "title": "Jump to range",
+                "category": "InlineBookmarks",
+                "icon": {
+                    "light": "images/jump-next.svg",
+                    "dark": "images/jump-next-dark.svg"
+                }
+            },
+            {
                 "command": "inlineBookmarks.setTreeViewFilterWords",
                 "title": "Filter View ...",
                 "category": "InlineBookmarks",
