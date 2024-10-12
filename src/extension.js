@@ -71,16 +71,17 @@ function editorFindNearestBookmark(documentUri, treeDataProvider, anchor, overri
 }
 
 function onActivate(context) {
-    const auditTags = new InlineBookmarksCtrl(context);
-    const treeDataProvider = new InlineBookmarkTreeDataProvider(auditTags);
+    const outputChannel = vscode.window.createOutputChannel("Inline Bookmarks Logs");
+    const auditTags = new InlineBookmarksCtrl(context, outputChannel);
+    const treeDataProvider = new InlineBookmarkTreeDataProvider(auditTags, outputChannel);
 
     var activeEditor = vscode.window.activeTextEditor;
 
     /** register views */
     const treeView = vscode.window.createTreeView("inlineBookmarksExplorer", { treeDataProvider: treeDataProvider });
-    /*
+
     context.subscriptions.push(treeView);
-    */
+
     /*
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider("inlineBookmarksExplorer", treeDataProvider)
