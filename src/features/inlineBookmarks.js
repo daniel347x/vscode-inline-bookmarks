@@ -467,16 +467,34 @@ class InlineBookmarksDataModel {
         /** returns element */
         let fileBookmarks = Object.keys(this.controller.bookmarks);
 
-        if (settings.extensionConfig().view.showVisibleFilesOnly) {
-            let visibleEditorUris;
-            if (settings.extensionConfig().view.showVisibleFilesOnlyMode === "onlyActiveEditor") {
-                visibleEditorUris = [vscode.window.activeTextEditor.document.uri.path];
-            } else {
-                visibleEditorUris = vscode.window.visibleTextEditors.map((te) => te.document.uri.path);
-            }
+        // if (settings.extensionConfig().view.showVisibleFilesOnly) {
+        //     let visibleEditorUris;
+        //     if (settings.extensionConfig().view.showVisibleFilesOnlyMode === "onlyActiveEditor") {
+        //         visibleEditorUris = [vscode.window.activeTextEditor.document.uri.path];
+        //     } else {
+        //         visibleEditorUris = vscode.window.visibleTextEditors.map((te) => te.document.uri.path);
+        //     }
 
-            fileBookmarks = fileBookmarks.filter((v) => visibleEditorUris.includes(vscode.Uri.parse(v).path));
-        }
+        //     fileBookmarks = fileBookmarks.filter((v) => visibleEditorUris.includes(vscode.Uri.parse(v).path));
+        // }
+
+        let visibleEditorUris = vscode.window.tabGroups.all
+            .map((group) => group.tabs)
+            .flat()
+            .map((tab) => {
+                if (tab.input instanceof vscode.TabInputText) {
+                    return tab.input.uri.path;
+                } else if (tab.input instanceof vscode.TabInputTextDiff) {
+                    // Include both sides of diff editors
+                    return [tab.input.modified.path, tab.input.original.path];
+                }
+                // Handle other types of tabs if necessary
+                return null;
+            })
+            .flat()
+            .filter((path) => path !== null);
+
+        fileBookmarks = fileBookmarks.filter((v) => visibleEditorUris.includes(vscode.Uri.parse(v).path));
 
         return fileBookmarks.sort().map((v) => {
             return {
