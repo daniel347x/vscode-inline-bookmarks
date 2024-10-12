@@ -26,30 +26,89 @@ class Commands {
         }, this);
     }
 
+    // showSelectBookmark(filter, placeHolder) {
+    //     let entries = [];
+    //     Object.keys(this.controller.bookmarks).forEach((uri) => {
+    //         let resource = vscode.Uri.parse(uri).fsPath;
+    //         let fname = path.parse(resource).base;
+
+    //         if (filter && !filter(resource)) {
+    //             return;
+    //         }
+
+    //         Object.keys(this.controller.bookmarks[uri]).forEach((cat) => {
+    //             this.controller.bookmarks[uri][cat].forEach((b) => {
+    //                 entries.push({
+    //                     label: `${fname}: ${b.text}`,
+    //                     text: b.text,
+    //                     word: b.word,
+    //                     description: fname,
+    //                     target: new vscode.Location(resource, b.range),
+    //                     filename: fname,
+    //                     isFilenameEntry: false,
+    //                 });
+    //             });
+    //         });
+    //     }, this);
+
+    //     // Sort entries first by word, then by label
+    //     entries.sort((a, b) => {
+    //         if (a.filename < b.filename) return -1;
+    //         if (a.filename > b.filename) return 1;
+    //         if (a.word < b.word) return -1;
+    //         if (a.word > b.word) return 1;
+    //         if (a.label < b.label) return -1;
+    //         if (a.label > b.label) return 1;
+    //         return 0;
+    //     });
+
+    //     var useNewMethod = false;
+
+    //     if (useNewMethod) {
+    //         // Create a new list with concatenated 'label' and no 'word' field
+    //         entries = entries.map((entry) => ({
+    //             label: `${entry.label}`,
+    //             description: entry.description,
+    //             target: entry.target,
+    //         }));
+    //     }
+
+    //     vscode.window.showQuickPick(entries, { placeHolder: placeHolder || "Select bookmarks" }).then((item) => {
+    //         vscode.commands.executeCommand("inlineBookmarks.jumpToRange", item.target.uri, item.target.range);
+    //     });
+    // }
+
     showSelectBookmark(filter, placeHolder) {
         let entries = [];
         Object.keys(this.controller.bookmarks).forEach((uri) => {
-            let resource = vscode.Uri.parse(uri).fsPath;
-            let fname = path.parse(resource).base;
+            let resource = vscode.Uri.parse(uri);
+            let resourceFsPath = resource.fsPath;
+            let fname = path.parse(resourceFsPath).base;
 
-            if (filter && !filter(resource)) {
+            if (filter && !filter(resourceFsPath)) {
                 return;
             }
 
             Object.keys(this.controller.bookmarks[uri]).forEach((cat) => {
                 this.controller.bookmarks[uri][cat].forEach((b) => {
                     entries.push({
-                        label: b.text,
+                        label: `${fname}: ${b.text}`,
+                        text: b.text,
                         word: b.word,
                         description: fname,
                         target: new vscode.Location(resource, b.range),
+                        filename: fname,
+                        uri: resource,
+                        isFilenameEntry: false,
                     });
                 });
             });
         }, this);
 
-        // Sort entries first by word, then by label
+        // Sort entries first by filename, then by word, then by label
         entries.sort((a, b) => {
+            if (a.filename < b.filename) return -1;
+            if (a.filename > b.filename) return 1;
             if (a.word < b.word) return -1;
             if (a.word > b.word) return 1;
             if (a.label < b.label) return -1;
@@ -57,19 +116,43 @@ class Commands {
             return 0;
         });
 
-        var useNewMethod = false;
+        // Create a new entries array with filename entries and indented bookmarks
+        let newEntries = [];
+        let currentFilename = null;
 
-        if (useNewMethod) {
-            // Create a new list with concatenated 'label' and no 'word' field
-            entries = entries.map((entry) => ({
-                label: `${entry.label}`,
-                description: entry.description,
-                target: entry.target,
-            }));
-        }
+        entries.forEach((entry) => {
+            if (currentFilename !== entry.filename) {
+                // Filename has changed; add a filename entry
+                currentFilename = entry.filename;
+                newEntries.push({
+                    label: currentFilename, // Filename only
+                    isFilenameEntry: true,
+                    filename: currentFilename,
+                    uri: entry.uri, // Save the URI to open the file
+                });
+            }
 
-        vscode.window.showQuickPick(entries, { placeHolder: placeHolder || "Select bookmarks" }).then((item) => {
-            vscode.commands.executeCommand("inlineBookmarks.jumpToRange", item.target.uri, item.target.range);
+            // Add the bookmark entry with indentation and without filename prefix
+            newEntries.push({
+                ...entry,
+                label: "    " + entry.text.trim(), // Indent label
+                isFilenameEntry: false,
+            });
+        });
+
+        // Use newEntries for QuickPick
+        vscode.window.showQuickPick(newEntries, { placeHolder: placeHolder || "Select bookmarks" }).then((item) => {
+            if (item) {
+                if (item.isFilenameEntry) {
+                    // Open the file
+                    vscode.workspace.openTextDocument(item.uri).then((doc) => {
+                        vscode.window.showTextDocument(doc);
+                    });
+                } else {
+                    // Jump to the range
+                    vscode.commands.executeCommand("inlineBookmarks.jumpToRange", item.target.uri, item.target.range);
+                }
+            }
         });
     }
 
@@ -214,7 +297,7 @@ class InlineBookmarksCtrl {
             if (!this.words.hasOwnProperty(style) || this.words[style].length == 0 || this._wordIsOnIgnoreList(this.words[style])) {
                 continue;
             }
-            this._decorateWords(editor, this.words[style], style, editor.document.fileName.startsWith("extension-output-")); //dont add to bookmarks if we're decorating an extension-output
+            this._decorateWords(editor, this.words[style], style, editor.document.fileName.startsWith("extension-output-")); //don't add to bookmarks if we're decorating an extension-output
         }
 
         this.saveToWorkspace(); //update workspace
@@ -466,20 +549,6 @@ class InlineBookmarksDataModel {
     getRoot() {
         /** returns element */
         let fileBookmarks = Object.keys(this.controller.bookmarks);
-
-        // if (settings.extensionConfig().view.showVisibleFilesOnly) {
-        //     let visibleEditorUris;
-        //     if (settings.extensionConfig().view.showVisibleFilesOnlyMode === "onlyActiveEditor") {
-        //         // Original shows only the active editor
-        //         // visibleEditorUris = [vscode.window.activeTextEditor.document.uri.path];
-        //         // New shows all open editors
-        //         visibleEditorUris = vscode.workspace.textDocuments.map((doc) => doc.uri.path);
-        //     } else {
-        //         visibleEditorUris = vscode.window.visibleTextEditors.map((te) => te.document.uri.path);
-        //     }
-
-        //     fileBookmarks = fileBookmarks.filter((v) => visibleEditorUris.includes(vscode.Uri.parse(v).path));
-        // }
 
         let visibleEditorUris = vscode.window.tabGroups.all
             .map((group) => group.tabs)
