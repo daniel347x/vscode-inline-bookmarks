@@ -74,6 +74,7 @@ class Commands {
                         description: fname,
                         target: new vscode.Location(resource, b.range),
                         filename: fname,
+                        filepath: resourceFsPath,
                         uri: resource,
                         isFilenameEntry: false,
                     });
@@ -83,6 +84,8 @@ class Commands {
 
         // Sort entries first by filename, then by word, then by label
         entries.sort((a, b) => {
+            if (a.filepath < b.filepath) return -1;
+            if (a.filepath > b.filepath) return 1;
             if (a.filename < b.filename) return -1;
             if (a.filename > b.filename) return 1;
             if (a.word < b.word) return -1;
@@ -92,18 +95,48 @@ class Commands {
             return 0;
         });
 
-        // Create a new entries array with filename entries and indented bookmarks
+        // Step 1: Collect all unique file paths
+        let filePaths = [...new Set(entries.map((entry) => entry.filepath))];
+
+        // Step 2: Find the common root path
+        function getCommonPath(paths) {
+            if (!paths || paths.length === 0) {
+                return "";
+            }
+            const splitPaths = paths.map((p) => p.split(path.sep));
+            const minLen = Math.min(...splitPaths.map((parts) => parts.length));
+            let commonParts = [];
+            for (let i = 0; i < minLen; i++) {
+                const part = splitPaths[0][i];
+                if (splitPaths.every((parts) => parts[i] === part)) {
+                    commonParts.push(part);
+                } else {
+                    break;
+                }
+            }
+            return commonParts.length > 0 ? commonParts.join(path.sep) + path.sep : "";
+        }
+
+        let commonRoot = getCommonPath(filePaths);
+
+        // Step 3: Compute relative paths and add 'relativePath' to entries
+        entries.forEach((entry) => {
+            const relativePath = path.relative(commonRoot, entry.filepath);
+            entry.relativePath = relativePath;
+        });
+
+        // Step 4: Create newEntries with the relative paths
         let newEntries = [];
-        let currentFilename = null;
+        let currentRelativePath = null;
 
         entries.forEach((entry) => {
-            if (currentFilename !== entry.filename) {
-                // Filename has changed; add a filename entry
-                currentFilename = entry.filename;
+            if (currentRelativePath !== entry.relativePath) {
+                // Relative path has changed; add a filename entry
+                currentRelativePath = entry.relativePath;
                 newEntries.push({
-                    label: currentFilename, // Filename only
+                    label: currentRelativePath, // Use relative path as the label
                     isFilenameEntry: true,
-                    filename: currentFilename,
+                    filename: entry.filename,
                     uri: entry.uri, // Save the URI to open the file
                 });
             }
@@ -551,10 +584,15 @@ class InlineBookmarksDataModel {
         fileBookmarks = fileBookmarks.filter((v) => visibleEditorUris.includes(vscode.Uri.parse(v).path));
 
         return fileBookmarks.sort().map((v) => {
+            const resourceUri = vscode.Uri.parse(v);
+            const resourceFsPath = resourceUri.fsPath;
+            // Compute the relative path from the workspace folder
+            const relativePath = vscode.workspace.asRelativePath(resourceFsPath);
             return {
                 resource: vscode.Uri.parse(v),
                 tooltip: v,
                 name: v,
+                label: relativePath,
                 type: NodeType.FILE,
                 parent: null,
                 iconPath: vscode.ThemeIcon.File,
