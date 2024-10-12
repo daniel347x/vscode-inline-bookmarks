@@ -95,37 +95,13 @@ class Commands {
             return 0;
         });
 
-        // Step 1: Collect all unique file paths
-        let filePaths = [...new Set(entries.map((entry) => entry.filepath))];
-
-        // Step 2: Find the common root path
-        function getCommonPath(paths) {
-            if (!paths || paths.length === 0) {
-                return "";
-            }
-            const splitPaths = paths.map((p) => p.split(path.sep));
-            const minLen = Math.min(...splitPaths.map((parts) => parts.length));
-            let commonParts = [];
-            for (let i = 0; i < minLen; i++) {
-                const part = splitPaths[0][i];
-                if (splitPaths.every((parts) => parts[i] === part)) {
-                    commonParts.push(part);
-                } else {
-                    break;
-                }
-            }
-            return commonParts.length > 0 ? commonParts.join(path.sep) + path.sep : "";
-        }
-
-        let commonRoot = getCommonPath(filePaths);
-
-        // Step 3: Compute relative paths and add 'relativePath' to entries
+        // Replace with relative path to workspace root
         entries.forEach((entry) => {
-            const relativePath = path.relative(commonRoot, entry.filepath);
+            const relativePath = vscode.workspace.asRelativePath(entry.filepath);
             entry.relativePath = relativePath;
         });
 
-        // Step 4: Create newEntries with the relative paths
+        // Create newEntries with the relative paths
         let newEntries = [];
         let currentRelativePath = null;
 
