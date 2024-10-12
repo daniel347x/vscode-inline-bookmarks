@@ -26,64 +26,40 @@ class Commands {
         }, this);
     }
 
-    // showSelectBookmark(filter, placeHolder) {
-    //     let entries = [];
-    //     Object.keys(this.controller.bookmarks).forEach((uri) => {
-    //         let resource = vscode.Uri.parse(uri).fsPath;
-    //         let fname = path.parse(resource).base;
-
-    //         if (filter && !filter(resource)) {
-    //             return;
-    //         }
-
-    //         Object.keys(this.controller.bookmarks[uri]).forEach((cat) => {
-    //             this.controller.bookmarks[uri][cat].forEach((b) => {
-    //                 entries.push({
-    //                     label: `${fname}: ${b.text}`,
-    //                     text: b.text,
-    //                     word: b.word,
-    //                     description: fname,
-    //                     target: new vscode.Location(resource, b.range),
-    //                     filename: fname,
-    //                     isFilenameEntry: false,
-    //                 });
-    //             });
-    //         });
-    //     }, this);
-
-    //     // Sort entries first by word, then by label
-    //     entries.sort((a, b) => {
-    //         if (a.filename < b.filename) return -1;
-    //         if (a.filename > b.filename) return 1;
-    //         if (a.word < b.word) return -1;
-    //         if (a.word > b.word) return 1;
-    //         if (a.label < b.label) return -1;
-    //         if (a.label > b.label) return 1;
-    //         return 0;
-    //     });
-
-    //     var useNewMethod = false;
-
-    //     if (useNewMethod) {
-    //         // Create a new list with concatenated 'label' and no 'word' field
-    //         entries = entries.map((entry) => ({
-    //             label: `${entry.label}`,
-    //             description: entry.description,
-    //             target: entry.target,
-    //         }));
-    //     }
-
-    //     vscode.window.showQuickPick(entries, { placeHolder: placeHolder || "Select bookmarks" }).then((item) => {
-    //         vscode.commands.executeCommand("inlineBookmarks.jumpToRange", item.target.uri, item.target.range);
-    //     });
-    // }
-
     showSelectBookmark(filter, placeHolder) {
         let entries = [];
+
+        // Step 1: Get list of open tab file paths if the setting is enabled
+        let visibleEditorUris = [];
+        if (settings.extensionConfig().view.showVisibleFilesOnly) {
+            visibleEditorUris = vscode.window.tabGroups.all
+                .map((group) => group.tabs)
+                .flat()
+                .map((tab) => {
+                    if (tab.input instanceof vscode.TabInputText) {
+                        return tab.input.uri.fsPath;
+                    } else if (tab.input instanceof vscode.TabInputTextDiff) {
+                        // Include both original and modified files in case of diff editors
+                        return [tab.input.modified.fsPath, tab.input.original.fsPath];
+                    }
+                    return null;
+                })
+                .flat()
+                .filter((path) => path !== null);
+        }
+
+        // Step 2: Modify the loop to filter files based on the setting
         Object.keys(this.controller.bookmarks).forEach((uri) => {
             let resource = vscode.Uri.parse(uri);
             let resourceFsPath = resource.fsPath;
             let fname = path.parse(resourceFsPath).base;
+
+            // Filter out files not in open tabs if the setting is enabled
+            if (settings.extensionConfig().view.showVisibleFilesOnly) {
+                if (!visibleEditorUris.includes(resourceFsPath)) {
+                    return; // Skip this file
+                }
+            }
 
             if (filter && !filter(resourceFsPath)) {
                 return;
@@ -550,20 +526,27 @@ class InlineBookmarksDataModel {
         /** returns element */
         let fileBookmarks = Object.keys(this.controller.bookmarks);
 
-        let visibleEditorUris = vscode.window.tabGroups.all
-            .map((group) => group.tabs)
-            .flat()
-            .map((tab) => {
-                if (tab.input instanceof vscode.TabInputText) {
-                    return tab.input.uri.path;
-                } else if (tab.input instanceof vscode.TabInputTextDiff) {
-                    // Include both original and modified files in case of diff editors
-                    return [tab.input.modified.path, tab.input.original.path];
-                }
-                return null;
-            })
-            .flat()
-            .filter((path) => path !== null);
+        let visibleEditorUris = [];
+        if (settings.extensionConfig().view.showVisibleFilesOnly) {
+            visibleEditorUris = vscode.window.tabGroups.all
+                .map((group) => group.tabs)
+                .flat()
+                .map((tab) => {
+                    if (tab.input instanceof vscode.TabInputText) {
+                        return tab.input.uri.path;
+                    } else if (tab.input instanceof vscode.TabInputTextDiff) {
+                        // Include both original and modified files in case of diff editors
+                        return [tab.input.modified.path, tab.input.original.path];
+                    }
+                    return null;
+                })
+                .flat()
+                .filter((path) => path !== null);
+        } else {
+            visibleEditorUris = vscode.workspace.textDocuments.map((doc) => doc.uri.path);
+            // Shows only the currently active editor
+            // visibleEditorUris = vscode.window.visibleTextEditors.map((te) => te.document.uri.path);
+        }
 
         fileBookmarks = fileBookmarks.filter((v) => visibleEditorUris.includes(vscode.Uri.parse(v).path));
 
